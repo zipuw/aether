@@ -139,43 +139,33 @@ public class TerminalView extends View {
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        // Обычный текст, чтобы Gboard слал символы через commitText/setComposingText
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
-                | EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
                 | EditorInfo.IME_ACTION_NONE;
 
-        // dummy=true чтобы не дублировать через commitText
-        return new BaseInputConnection(this, true) {
+        // Важно: false — чтобы BaseInputConnection не дублировал текст через KeyEvents
+        return new BaseInputConnection(this, false) {
             @Override
-            public boolean sendKeyEvent(KeyEvent event) {
-                if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
-                if (host == null) return true;
-
-                int keyCode = event.getKeyCode();
-                int unicode = event.getUnicodeChar(event.getMetaState());
-
-                if (unicode >= 0x20) {
-                    // печатный символ — отправляем как текст
-                    host.onInput(String.valueOf((char) unicode));
-                } else {
-                    // Enter, Backspace, Tab, стрелки — через onKey
-                    host.onKey(keyCode, event.getMetaState());
+            public boolean setComposingText(CharSequence text, int newCursorPosition) {
+                // Отправляем символы по мере набора (мгновенное эхо)
+                if (host != null && text.length() > 0) {
+                    // Отправляем только новые символы (последний введённый)
+                    String s = text.toString();
+                    if (s.length() > 0) {
+                        host.onInput(s.substring(s.length() - 1));
+                    }
                 }
                 return true;
             }
 
             @Override
             public boolean commitText(CharSequence text, int newCursorPosition) {
-                // Пусто — sendKeyEvent уже всё обработал
-                return true;
-            }
-
-            @Override
-            public boolean setComposingText(CharSequence text, int newCursorPosition) {
+                // Финальная отправка (пробел, Enter)
+                // Ничего не делаем, т.к. символы уже отправлены в setComposingText
                 return true;
             }
 
@@ -184,6 +174,14 @@ public class TerminalView extends View {
 
             @Override
             public boolean finishComposingText() { return true; }
+
+            @Override
+            public boolean sendKeyEvent(KeyEvent event) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && host != null) {
+                    host.onKey(event.getKeyCode(), event.getMetaState());
+                }
+                return true;
+            }
 
             @Override
             public boolean deleteSurroundingText(int before, int after) {
