@@ -5,21 +5,16 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
-import android.text.InputType;
 import android.util.AttributeSet;
-import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.inputmethod.BaseInputConnection;
-import android.view.inputmethod.EditorInfo;
-import android.view.inputmethod.InputConnection;
-import android.view.inputmethod.InputMethodManager;
 
 public class TerminalView extends View {
     public interface Host {
         void onInput(String text);
         void onKey(int keyCode, int metaState);
         void onResize(int rows, int cols);
+        void onTouch();
     }
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -47,8 +42,8 @@ public class TerminalView extends View {
         paint.setColor(Color.WHITE);
         bgPaint.setColor(BG);
         setBackgroundColor(BG);
-        setFocusable(true);
-        setFocusableInTouchMode(true);
+        // НЕ focusable — фокус держит скрытый EditText
+        setFocusable(false);
     }
 
     public void setHost(Host h) { this.host = h; }
@@ -119,77 +114,9 @@ public class TerminalView extends View {
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         if (e.getAction() == MotionEvent.ACTION_DOWN) {
-            requestFocus();
-            showKeyboard();
+            if (host != null) host.onTouch();
             return true;
         }
         return super.onTouchEvent(e);
-    }
-
-    public void showKeyboard() {
-        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) {
-            imm.restartInput(this);
-            imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT);
-        }
-    }
-
-    @Override
-    public boolean onCheckIsTextEditor() { return true; }
-
-    @Override
-    public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        // Обычный текст, чтобы Gboard слал символы через commitText/setComposingText
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
-                | EditorInfo.IME_FLAG_NO_EXTRACT_UI
-                | EditorInfo.IME_ACTION_NONE;
-
-        // Важно: false — чтобы BaseInputConnection не дублировал текст через KeyEvents
-        return new BaseInputConnection(this, false) {
-            @Override
-            public boolean setComposingText(CharSequence text, int newCursorPosition) {
-                // Отправляем символы по мере набора (мгновенное эхо)
-                if (host != null && text.length() > 0) {
-                    // Отправляем только новые символы (последний введённый)
-                    String s = text.toString();
-                    if (s.length() > 0) {
-                        host.onInput(s.substring(s.length() - 1));
-                    }
-                }
-                return true;
-            }
-
-            @Override
-            public boolean commitText(CharSequence text, int newCursorPosition) {
-                // Финальная отправка (пробел, Enter)
-                // Ничего не делаем, т.к. символы уже отправлены в setComposingText
-                return true;
-            }
-
-            @Override
-            public boolean setComposingRegion(int start, int end) { return true; }
-
-            @Override
-            public boolean finishComposingText() { return true; }
-
-            @Override
-            public boolean sendKeyEvent(KeyEvent event) {
-                if (event.getAction() == KeyEvent.ACTION_DOWN && host != null) {
-                    host.onKey(event.getKeyCode(), event.getMetaState());
-                }
-                return true;
-            }
-
-            @Override
-            public boolean deleteSurroundingText(int before, int after) {
-                if (host != null) {
-                    for (int i = 0; i < before; i++) host.onKey(KeyEvent.KEYCODE_DEL, 0);
-                }
-                return true;
-            }
-        };
     }
 }
