@@ -1,0 +1,21 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.aether.term'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.aether.term'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '0.1'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        debug { debuggable true }
+    }
+}
