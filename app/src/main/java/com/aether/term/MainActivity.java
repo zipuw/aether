@@ -27,7 +27,7 @@ public class MainActivity extends Activity implements TerminalView.Host {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && !started) { started = true; view.post(this::startShell); }
+        if (hasFocus && !started) { started = true; view.postDelayed(this::startShell, 300); }
     }
 
     private void startShell() {
@@ -36,11 +36,12 @@ public class MainActivity extends Activity implements TerminalView.Host {
         parser = new AnsiParser(buf);
 
         try {
-            ProcessBuilder pb = new ProcessBuilder("/system/bin/sh");
+            ProcessBuilder pb = new ProcessBuilder("/system/bin/sh", "-i");
             pb.redirectErrorStream(true);
             pb.environment().put("TERM", "xterm-256color");
             pb.environment().put("PATH", "/system/bin:/system/xbin");
             pb.environment().put("HOME", getFilesDir().getAbsolutePath());
+            pb.environment().put("PS1", "aether$ ");
             pb.directory(getFilesDir());
             shell = pb.start();
             shellIn = shell.getOutputStream();
@@ -59,8 +60,10 @@ public class MainActivity extends Activity implements TerminalView.Host {
             t.setDaemon(true);
             t.start();
 
-            sendBytes("export PS1='aether$ '\n".getBytes(StandardCharsets.UTF_8));
-        } catch (IOException e) {
+            // пинок shell'у: пустая команда заставит его напечатать промпт
+            Thread.sleep(150);
+            sendBytes("\n".getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
             Log.e(TAG, "startShell", e);
         }
     }
