@@ -31,6 +31,11 @@ public class TerminalBuffer {
         cursorX = cursorY = 0;
     }
 
+    // Алиас — вызывается из TerminalView.onSizeChanged
+    public void resize(int r, int c) {
+        resizeKeep(r, c);
+    }
+
     public void resizeKeep(int r, int c) {
         int oldRows = rows, oldCols = cols;
         char[][] oldChars = chars;
@@ -48,7 +53,6 @@ public class TerminalBuffer {
                 chars[y][x] = ' '; fg[y][x] = 7; bg[y][x] = -1; attrs[y][x] = 0;
             }
 
-        // если курсор был за пределами нового окна — сдвигаем содержимое вверх
         int shift = 0;
         if (oldCy >= r) shift = oldCy - r + 1;
 
