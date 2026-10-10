@@ -5,6 +5,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.text.InputType;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -48,6 +49,7 @@ public class TerminalView extends View {
         setBackgroundColor(BG);
         setFocusable(true);
         setFocusableInTouchMode(true);
+        setFocusableInTouchMode(true);
     }
 
     public void setHost(Host h) { this.host = h; }
@@ -67,7 +69,7 @@ public class TerminalView extends View {
         int cols = Math.max(20, (int)((w - padX * 2) / cellW));
         int rows = Math.max(8, (int)((h - padY * 2) / cellH));
         if (buffer == null) buffer = new TerminalBuffer(rows, cols);
-        else buffer.resize(rows, cols);
+        else buffer.resizeKeep(rows, cols);
         if (host != null) host.onResize(rows, cols);
     }
 
@@ -127,26 +129,68 @@ public class TerminalView extends View {
 
     public void showKeyboard() {
         InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT);
+        if (imm != null) {
+            imm.restartInput(this);
+            imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT);
+        }
     }
 
     @Override
     public boolean onCheckIsTextEditor() { return true; }
 
     @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // Железные клавиши (bluetooth-клавиатура, физические кнопки)
+        if (host != null) {
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_ENTER:
+                case KeyEvent.KEYCODE_DEL:
+                case KeyEvent.KEYCODE_TAB:
+                case KeyEvent.KEYCODE_ESCAPE:
+                case KeyEvent.KEYCODE_DPAD_UP:
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    host.onKey(keyCode, event.getMetaState());
+                    return true;
+            }
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+        // VISIBLE_PASSWORD отключает автокоррекцию и подсказки —
+        // клавиатура начинает слать сырые символы, а не "слова"
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
                 | EditorInfo.IME_ACTION_NONE;
-        return new BaseInputConnection(this, true) {
+        outAttrs.initialSelStart = 0;
+        outAttrs.initialSelEnd = 0;
+
+        return new BaseInputConnection(this, false) {
             @Override
             public boolean commitText(CharSequence text, int newCursorPosition) {
                 if (host != null && text.length() > 0) host.onInput(text.toString());
                 return true;
             }
+
+            @Override
+            public boolean setComposingText(CharSequence text, int newCursorPosition) {
+                // На некоторых клавиатурах символы приходят сюда — обрабатываем как обычный ввод
+                if (host != null && text.length() > 0) host.onInput(text.toString());
+                return true;
+            }
+
+            @Override
+            public boolean setComposingRegion(int start, int end) { return true; }
+
+            @Override
+            public boolean finishComposingText() { return true; }
+
             @Override
             public boolean sendKeyEvent(KeyEvent event) {
                 if (event.getAction() == KeyEvent.ACTION_DOWN && host != null) {
@@ -154,13 +198,14 @@ public class TerminalView extends View {
                 }
                 return true;
             }
+
             @Override
             public boolean deleteSurroundingText(int before, int after) {
-                if (before > 0 && host != null) host.onInput("\u007F");
+                if (host != null) {
+                    for (int i = 0; i < before; i++) host.onKey(KeyEvent.KEYCODE_DEL, 0);
+                }
                 return true;
             }
-            @Override
-            public boolean finishComposingText() { return true; }
         };
     }
 }
