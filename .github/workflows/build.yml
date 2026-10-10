@@ -13,7 +13,7 @@ jobs:
         env:
           DEBUG_KEYSTORE: ${{ secrets.DEBUG_KEYSTORE }}
         run: |
-          echo "$DEBUG_KEYSTORE" | base64 -d > app/debug.keystore
+          echo "$DEBUG_KEYSTORE" | tr -d ' \n\r\t' | base64 -d > app/debug.keystore
           echo "KEYSTORE_PATH=${{ github.workspace }}/app/debug.keystore" >> $GITHUB_ENV
       - name: Build
         run: gradle assembleDebug --no-daemon
