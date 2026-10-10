@@ -28,6 +28,7 @@ public class TerminalView extends View {
     private Host host;
     private float cellW, cellH, baseY;
     private int padX = 12, padY = 12;
+    private String lastComposing = "";
 
     private final int[] PALETTE = {
         0xFF1A1A1A, 0xFFCC0000, 0xFF4E9A06, 0xFFC4A000,
@@ -141,26 +142,35 @@ public class TerminalView extends View {
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                | EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
                 | EditorInfo.IME_ACTION_NONE;
 
         return new BaseInputConnection(this, false) {
             @Override
-            public boolean commitText(CharSequence text, int newCursorPosition) {
-                if (host != null && text.length() > 0) host.onInput(text.toString());
-                return true;
-            }
-            @Override
             public boolean setComposingText(CharSequence text, int newCursorPosition) {
-                if (host != null && text.length() > 0) host.onInput(text.toString());
+                handleTextInput(text.toString(), false);
                 return true;
             }
+
+            @Override
+            public boolean commitText(CharSequence text, int newCursorPosition) {
+                handleTextInput(text.toString(), true);
+                return true;
+            }
+
             @Override
             public boolean setComposingRegion(int start, int end) { return true; }
+
             @Override
-            public boolean finishComposingText() { return true; }
+            public boolean finishComposingText() {
+                lastComposing = "";
+                return true;
+            }
+
             @Override
             public boolean sendKeyEvent(KeyEvent event) {
                 if (event.getAction() == KeyEvent.ACTION_DOWN && host != null) {
@@ -168,6 +178,7 @@ public class TerminalView extends View {
                 }
                 return true;
             }
+
             @Override
             public boolean deleteSurroundingText(int before, int after) {
                 if (host != null) {
@@ -176,5 +187,25 @@ public class TerminalView extends View {
                 return true;
             }
         };
+    }
+
+    private void handleTextInput(String newText, boolean isCommit) {
+        if (host == null) return;
+
+        if (newText.startsWith(lastComposing)) {
+            // Добавление символов
+            String added = newText.substring(lastComposing.length());
+            if (!added.isEmpty()) host.onInput(added);
+        } else if (lastComposing.startsWith(newText)) {
+            // Удаление — посылаем backspace'ы
+            int removed = lastComposing.length() - newText.length();
+            for (int i = 0; i < removed; i++) host.onKey(KeyEvent.KEYCODE_DEL, 0);
+        } else {
+            // Полная замена — стираем и пишем заново
+            for (int i = 0; i < lastComposing.length(); i++) host.onKey(KeyEvent.KEYCODE_DEL, 0);
+            if (!newText.isEmpty()) host.onInput(newText);
+        }
+
+        lastComposing = isCommit ? "" : newText;
     }
 }
