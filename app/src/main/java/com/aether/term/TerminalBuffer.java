@@ -13,14 +13,13 @@ public class TerminalBuffer {
     public int cursorX, cursorY;
     public boolean cursorVisible = true;
 
-    public TerminalBuffer(int rows, int cols) { resize(rows, cols); }
-
-    public void resize(int r, int c) {
-        this.rows = r; this.cols = c;
-        chars = new char[r][c];
-        fg = new byte[r][c];
-        bg = new byte[r][c];
-        attrs = new byte[r][c];
+    public TerminalBuffer(int rows, int cols) {
+        this.rows = rows;
+        this.cols = cols;
+        chars = new char[rows][cols];
+        fg = new byte[rows][cols];
+        bg = new byte[rows][cols];
+        attrs = new byte[rows][cols];
         clear();
     }
 
@@ -30,6 +29,42 @@ public class TerminalBuffer {
                 chars[y][x] = ' '; fg[y][x] = 7; bg[y][x] = -1; attrs[y][x] = 0;
             }
         cursorX = cursorY = 0;
+    }
+
+    public void resizeKeep(int r, int c) {
+        int oldRows = rows, oldCols = cols;
+        char[][] oldChars = chars;
+        byte[][] oldFg = fg, oldBg = bg, oldAttrs = attrs;
+        int oldCx = cursorX, oldCy = cursorY;
+
+        rows = r; cols = c;
+        chars = new char[r][c];
+        fg = new byte[r][c];
+        bg = new byte[r][c];
+        attrs = new byte[r][c];
+
+        for (int y = 0; y < r; y++)
+            for (int x = 0; x < c; x++) {
+                chars[y][x] = ' '; fg[y][x] = 7; bg[y][x] = -1; attrs[y][x] = 0;
+            }
+
+        // если курсор был за пределами нового окна — сдвигаем содержимое вверх
+        int shift = 0;
+        if (oldCy >= r) shift = oldCy - r + 1;
+
+        int copyRows = Math.min(oldRows - shift, r);
+        int copyCols = Math.min(oldCols, c);
+        for (int y = 0; y < copyRows; y++) {
+            int srcY = y + shift;
+            if (srcY < 0 || srcY >= oldRows) continue;
+            System.arraycopy(oldChars[srcY], 0, chars[y], 0, copyCols);
+            System.arraycopy(oldFg[srcY], 0, fg[y], 0, copyCols);
+            System.arraycopy(oldBg[srcY], 0, bg[y], 0, copyCols);
+            System.arraycopy(oldAttrs[srcY], 0, attrs[y], 0, copyCols);
+        }
+
+        cursorX = Math.max(0, Math.min(oldCx, c - 1));
+        cursorY = Math.max(0, Math.min(oldCy - shift, r - 1));
     }
 
     public void scrollUp() {
@@ -52,6 +87,8 @@ public class TerminalBuffer {
 
     public void putChar(int cp, byte f, byte b, byte a) {
         if (cursorX >= cols) { cursorX = 0; lineFeed(); }
+        if (cursorY < 0) cursorY = 0;
+        if (cursorY >= rows) { scrollUp(); cursorY = rows - 1; }
         chars[cursorY][cursorX] = (char)cp;
         fg[cursorY][cursorX] = f;
         bg[cursorY][cursorX] = b;
@@ -61,6 +98,7 @@ public class TerminalBuffer {
 
     public void eraseInLine(int mode) {
         int y = cursorY;
+        if (y < 0 || y >= rows) return;
         if (mode == 0) for (int x = cursorX; x < cols; x++) wipe(y, x);
         else if (mode == 1) for (int x = 0; x <= cursorX && x < cols; x++) wipe(y, x);
         else if (mode == 2) for (int x = 0; x < cols; x++) wipe(y, x);
