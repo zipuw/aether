@@ -1,14 +1,21 @@
 package com.aether.term;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.*;
@@ -17,10 +24,12 @@ import java.nio.charset.StandardCharsets;
 public class MainActivity extends Activity implements TerminalView.Host {
     private static final String TAG = "Aether";
     private TerminalView view;
+    private EditText hiddenInput;
     private AnsiParser parser;
     private Process shell;
     private OutputStream shellIn;
     private volatile boolean started = false;
+    private String prevText = "";
 
     private TextView logView;
     private ScrollView logScroll;
@@ -30,49 +39,100 @@ public class MainActivity extends Activity implements TerminalView.Host {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#0A0E14"));
 
-        // Терминал сверху
         view = new TerminalView(this);
         view.setHost(this);
-        LinearLayout.LayoutParams termParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        root.addView(view, termParams);
+        root.addView(view, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // Лог снизу — фиксированной высоты, прокручиваемый
+        // Скрытый EditText под Canvas — сюда попадает весь ввод IME
+        hiddenInput = new EditText(this);
+        hiddenInput.setBackground(null);
+        hiddenInput.setTextColor(Color.TRANSPARENT);
+        hiddenInput.setCursorVisible(false);
+        hiddenInput.setAlpha(0.01f);
+        hiddenInput.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        hiddenInput.setImeOptions(EditorInfo.IME_FLAG_NO_FULLSCREEN
+                | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                | EditorInfo.IME_ACTION_NONE);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(1, 1);
+        lp.gravity = Gravity.TOP | Gravity.LEFT;
+        root.addView(hiddenInput, lp);
+
+        // Полоска лога снизу
         logScroll = new ScrollView(this);
         logScroll.setBackgroundColor(Color.parseColor("#1A0F0F"));
         logView = new TextView(this);
         logView.setTextColor(Color.parseColor("#FFB86C"));
         logView.setTypeface(Typeface.MONOSPACE);
-        logView.setTextSize(10);
-        logView.setPadding(16, 8, 16, 8);
-        logView.setText("лог событий ввода:\n");
+        logView.setTextSize(9);
+        logView.setPadding(12, 4, 12, 4);
+        logView.setText("лог\n");
         logScroll.addView(logView);
-        LinearLayout.LayoutParams logParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 260);
-        root.addView(logScroll, logParams);
+        FrameLayout.LayoutParams lp2 = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 180);
+        lp2.gravity = Gravity.BOTTOM;
+        root.addView(logScroll, lp2);
 
         setContentView(root);
-        view.requestFocus();
+
+        // TextWatcher — единственный источник ввода
+        hiddenInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override
+            public void afterTextChanged(Editable s) {
+                String cur = s.toString();
+                if (cur.equals(prevText)) return;
+
+                if (cur.length() > prevText.length()) {
+                    String added = cur.substring(prevText.length());
+                    log("+ \"" + added.replace("\n", "\\n") + "\"");
+                    onInput(added);
+                } else if (cur.length() < prevText.length()) {
+                    int removed = prevText.length() - cur.length();
+                    log("- x" + removed);
+                    for (int i = 0; i < removed; i++) onKey(KeyEvent.KEYCODE_DEL, 0);
+                }
+                prevText = cur;
+
+                if (cur.length() > 40) {
+                    hiddenInput.post(() -> {
+                        hiddenInput.setText("");
+                        prevText = "";
+                    });
+                }
+            }
+        });
     }
 
     private void log(String msg) {
         logBuf.append(msg).append('\n');
-        // держим только последние 30 строк
         String[] lines = logBuf.toString().split("\n");
-        if (lines.length > 30) {
+        if (lines.length > 10) {
             StringBuilder nb = new StringBuilder();
-            for (int i = lines.length - 30; i < lines.length; i++) nb.append(lines[i]).append('\n');
+            for (int i = lines.length - 10; i < lines.length; i++) nb.append(lines[i]).append('\n');
             logBuf = nb;
         }
-        final String text = "лог событий ввода:\n" + logBuf;
+        final String text = "лог\n" + logBuf;
         logView.post(() -> {
             logView.setText(text);
             logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
         });
+    }
+
+    public void logInput(String msg) { log(msg); }
+
+    @Override
+    public void onTouch() {
+        hiddenInput.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(hiddenInput, InputMethodManager.SHOW_IMPLICIT);
+        log("touch → focus");
     }
 
     @Override
@@ -125,17 +185,16 @@ public class MainActivity extends Activity implements TerminalView.Host {
 
     @Override
     public void onInput(String text) {
-        log("onInput: \"" + text.replace("\n", "\\n") + "\"");
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             echoChar(c);
-            sendBytes(String.valueOf(c).getBytes(StandardCharsets.UTF_8));
+            if (c == '\n') sendBytes(new byte[]{'\n'});
+            else sendBytes(String.valueOf(c).getBytes(StandardCharsets.UTF_8));
         }
     }
 
     @Override
     public void onKey(int keyCode, int metaState) {
-        log("onKey: code=" + keyCode);
         switch (keyCode) {
             case KeyEvent.KEYCODE_ENTER:
                 echoChar('\n');
@@ -157,10 +216,6 @@ public class MainActivity extends Activity implements TerminalView.Host {
             case KeyEvent.KEYCODE_DPAD_RIGHT: sendBytes(new byte[]{27,'[','C'}); break;
             case KeyEvent.KEYCODE_DPAD_LEFT: sendBytes(new byte[]{27,'[','D'}); break;
         }
-    }
-
-    public void logInput(String msg) {
-        log(msg);
     }
 
     private void echoChar(char c) {
