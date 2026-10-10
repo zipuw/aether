@@ -49,7 +49,6 @@ public class TerminalView extends View {
         setBackgroundColor(BG);
         setFocusable(true);
         setFocusableInTouchMode(true);
-        setFocusableInTouchMode(true);
     }
 
     public void setHost(Host h) { this.host = h; }
@@ -139,37 +138,13 @@ public class TerminalView extends View {
     public boolean onCheckIsTextEditor() { return true; }
 
     @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // Железные клавиши (bluetooth-клавиатура, физические кнопки)
-        if (host != null) {
-            switch (keyCode) {
-                case KeyEvent.KEYCODE_ENTER:
-                case KeyEvent.KEYCODE_DEL:
-                case KeyEvent.KEYCODE_TAB:
-                case KeyEvent.KEYCODE_ESCAPE:
-                case KeyEvent.KEYCODE_DPAD_UP:
-                case KeyEvent.KEYCODE_DPAD_DOWN:
-                case KeyEvent.KEYCODE_DPAD_LEFT:
-                case KeyEvent.KEYCODE_DPAD_RIGHT:
-                    host.onKey(keyCode, event.getMetaState());
-                    return true;
-            }
-        }
-        return super.onKeyDown(keyCode, event);
-    }
-
-    @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        // VISIBLE_PASSWORD отключает автокоррекцию и подсказки —
-        // клавиатура начинает слать сырые символы, а не "слова"
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
                 | EditorInfo.IME_ACTION_NONE;
-        outAttrs.initialSelStart = 0;
-        outAttrs.initialSelEnd = 0;
 
         return new BaseInputConnection(this, false) {
             @Override
@@ -177,20 +152,15 @@ public class TerminalView extends View {
                 if (host != null && text.length() > 0) host.onInput(text.toString());
                 return true;
             }
-
             @Override
             public boolean setComposingText(CharSequence text, int newCursorPosition) {
-                // На некоторых клавиатурах символы приходят сюда — обрабатываем как обычный ввод
                 if (host != null && text.length() > 0) host.onInput(text.toString());
                 return true;
             }
-
             @Override
             public boolean setComposingRegion(int start, int end) { return true; }
-
             @Override
             public boolean finishComposingText() { return true; }
-
             @Override
             public boolean sendKeyEvent(KeyEvent event) {
                 if (event.getAction() == KeyEvent.ACTION_DOWN && host != null) {
@@ -198,7 +168,6 @@ public class TerminalView extends View {
                 }
                 return true;
             }
-
             @Override
             public boolean deleteSurroundingText(int before, int after) {
                 if (host != null) {
