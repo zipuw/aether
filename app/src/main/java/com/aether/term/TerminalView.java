@@ -12,6 +12,7 @@ import android.view.View;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 
 public class TerminalView extends View {
     public interface Host {
@@ -116,8 +117,17 @@ public class TerminalView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        if (e.getAction() == MotionEvent.ACTION_DOWN) { requestFocus(); return true; }
+        if (e.getAction() == MotionEvent.ACTION_DOWN) {
+            requestFocus();
+            showKeyboard();
+            return true;
+        }
         return super.onTouchEvent(e);
+    }
+
+    public void showKeyboard() {
+        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT);
     }
 
     @Override
@@ -125,12 +135,16 @@ public class TerminalView extends View {
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        outAttrs.inputType = android.text.InputType.TYPE_NULL;
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_ACTION_NONE;
-        return new BaseInputConnection(this, false) {
+        outAttrs.inputType = android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
+                | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                | EditorInfo.IME_ACTION_NONE;
+        return new BaseInputConnection(this, true) {
             @Override
             public boolean commitText(CharSequence text, int newCursorPosition) {
-                if (host != null) host.onInput(text.toString());
+                if (host != null && text.length() > 0) host.onInput(text.toString());
                 return true;
             }
             @Override
@@ -145,6 +159,8 @@ public class TerminalView extends View {
                 if (before > 0 && host != null) host.onInput("\u007F");
                 return true;
             }
+            @Override
+            public boolean finishComposingText() { return true; }
         };
     }
 }
